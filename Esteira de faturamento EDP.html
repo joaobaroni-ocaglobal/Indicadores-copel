@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Gestão - Controle de Obras</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .kanban-scroll::-webkit-scrollbar, .d5-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+        .kanban-scroll::-webkit-scrollbar-track, .d5-scroll::-webkit-scrollbar-track { background: #1e293b; }
+        .kanban-scroll::-webkit-scrollbar-thumb, .d5-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        
+        .fade-in { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        body.modo-celular { overflow-y: auto !important; height: auto !important; }
+        body.modo-celular .grid-kpis { grid-template-columns: 1fr !important; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen w-screen flex flex-col p-4 md:p-6 font-sans overflow-hidden">
+    
+    <!-- Cabeçalho Principal -->
+    <header class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 border-b border-slate-700 pb-3 gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-extrabold text-white tracking-wide">CONTROLE DE OBRAS</h1>
+            
+            <!-- NAVEGAÇÃO DE ABAS -->
+            <div class="flex gap-2 mt-3">
+                <button id="aba1" onclick="mudarAba('grafico')" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow transition">
+                    📊 Visão Geral (Gráfico)
+                </button>
+                <button id="aba2" onclick="mudarAba('kanban')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm transition">
+                    📋 Esteira de Obras (Empilhado)
+                </button>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+            <button id="btnModoTela" onclick="alternarModoTela()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition">
+                📱 Celular / 📺 TV
+            </button>
+            <div class="text-right">
+                <h2 id="relogio" class="text-2xl md:text-3xl font-black text-blue-400 font-mono">00:00:00</h2>
+            </div>
+        </div>
+    </header>
+
+    <!-- CARDS / KPIS COMPARTILHADOS ENTRE AS ABAS -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4 mb-4 grid-kpis shrink-0">
+        
+        <!-- Card Total na Esteira -->
+        <div class="bg-slate-800 border-l-4 border-blue-500 rounded-xl p-3 md:p-4 flex justify-between items-center shadow">
+            <div>
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total na Esteira</h3>
+                <p id="totalEsteira" class="text-2xl md:text-3xl font-black text-white">0 obras</p>
+                <p id="valorTotalEsteira" class="text-sm md:text-base font-bold text-blue-400 mt-0.5">R$ 0,00</p>
+            </div>
+            <div class="text-3xl md:text-4xl opacity-80">📊</div>
+        </div>
+
+        <!-- Card D5 -->
+        <div onclick="mostrarTabelaModal('d5')" class="bg-slate-800 border-l-4 border-red-500 rounded-xl p-3 md:p-4 flex justify-between items-center shadow cursor-pointer hover:bg-slate-700 transition">
+            <div>
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aguardando D5</h3>
+                <p id="totalD5" class="text-2xl md:text-3xl font-black text-white">0 obras</p>
+                <p id="valorTotalD5" class="text-sm md:text-base font-bold text-red-400 mt-0.5">R$ 0,00</p>
+            </div>
+            <div class="text-3xl md:text-4xl opacity-80">⚠️</div>
+        </div>
+
+        <!-- Card Tempos Médios das Etapas Ativas -->
+        <div class="bg-slate-800 border-l-4 border-amber-500 rounded-xl p-3 md:p-4 flex justify-between items-center shadow">
+            <div class="w-full">
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Médias de Permanência</h3>
+                <div class="text-xs space-y-1">
+                    <div class="flex justify-between"><span class="text-amber-300">Pendente Inventário:</span> <b id="mediaPendente" class="font-mono">0d</b></div>
+                    <div class="flex justify-between"><span class="text-blue-300">Análise Cliente:</span> <b id="mediaAnalise" class="font-mono">0d</b></div>
+                    <div class="flex justify-between"><span class="text-emerald-300">Aguardando Pedido:</span> <b id="mediaAguardandoPedido" class="font-mono">0d</b></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card SLA Ciclo Completo (Conclusão Col C -> Pedido Criado Col Q) -->
+        <div class="bg-slate-800 border-l-4 border-purple-500 rounded-xl p-3 md:p-4 flex justify-between items-center shadow">
+            <div>
+                <h3 class="text-xs font-semibold text-purple-300 uppercase tracking-wider">Média até Pedido Criado</h3>
+                <p id="mediaCicloPedido" class="text-2xl md:text-3xl font-black text-purple-400 mt-1">0 dias</p>
+                <p class="text-[10px] text-slate-400 mt-0.5">Diferença Col Q x Col C (Pedido Criado)</p>
+            </div>
+            <div class="text-3xl md:text-4xl opacity-80">⏱️</div>
+        </div>
+
+    </div>
+
+    <!-- ABA 1: VISÃO GERAL (GRÁFICO) -->
+    <div id="conteudoGrafico" class="flex-grow flex flex-col fade-in">
+        <div class="bg-slate-800 rounded-xl p-4 md:p-6 flex-grow relative flex flex-col border border-slate-700">
+            <h2 class="text-lg md:text-xl font-bold text-white mb-2 text-center uppercase tracking-wide">Volume de Obras por Status</h2>
+            <div class="relative w-full flex-grow">
+                <canvas id="esteiraChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- ABA 2: VISÃO EM COLUNAS (ESTEIRA KANBAN + SUB-ESTEIRA D5) -->
+    <div id="conteudoKanban" class="hidden flex-grow flex-col overflow-hidden fade-in gap-3">
+        
+        <!-- ESTEIRA PRINCIPAL (TOPO) -->
+        <div class="kanban-scroll flex-grow flex gap-4 overflow-x-auto pb-2 items-start">
+            
+            <!-- Coluna 1: Pendente Inventário -->
+            <div class="min-w-[280px] md:min-w-[290px] max-w-[290px] bg-slate-800/80 rounded-xl border border-slate-700 flex flex-col h-full">
+                <div class="p-3 bg-slate-800 border-b border-amber-500/50 rounded-t-xl">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-amber-400 text-sm uppercase">Pendente Inventário</span>
+                        <span id="badgeQtdPendente" class="bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded text-xs">0</span>
+                    </div>
+                    <p id="valorColPendente" class="text-xs text-slate-400 font-mono mt-1">R$ 0,00</p>
+                </div>
+                <div id="colPendente" class="p-2 flex-grow overflow-y-auto flex flex-col gap-2"></div>
+            </div>
+
+            <!-- Coluna 2: Análise Cliente -->
+            <div class="min-w-[280px] md:min-w-[290px] max-w-[290px] bg-slate-800/80 rounded-xl border border-slate-700 flex flex-col h-full">
+                <div class="p-3 bg-slate-800 border-b border-blue-500/50 rounded-t-xl">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-blue-400 text-sm uppercase">Análise Cliente</span>
+                        <span id="badgeQtdAnalise" class="bg-blue-500/20 text-blue-300 font-bold px-2 py-0.5 rounded text-xs">0</span>
+                    </div>
+                    <p id="valorColAnalise" class="text-xs text-slate-400 font-mono mt-1">R$ 0,00</p>
+                </div>
+                <div id="colAnalise" class="p-2 flex-grow overflow-y-auto flex flex-col gap-2"></div>
+            </div>
+
+            <!-- Coluna 3: Aguardando Pedido -->
+            <div class="min-w-[280px] md:min-w-[290px] max-w-[290px] bg-slate-800/80 rounded-xl border border-slate-700 flex flex-col h-full">
+                <div class="p-3 bg-slate-800 border-b border-emerald-500/50 rounded-t-xl">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-emerald-400 text-sm uppercase">Aguardando Pedido</span>
+                        <span id="badgeQtdAguardandoPedido" class="bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded text-xs">0</span>
+                    </div>
+                    <p id="valorColAguardandoPedido" class="text-xs text-slate-400 font-mono mt-1">R$ 0,00</p>
+                </div>
+                <div id="colAguardandoPedido" class="p-2 flex-grow overflow-y-auto flex flex-col gap-2"></div>
+            </div>
+
+            <!-- Coluna 4: Pedido Criado -->
+            <div class="min-w-[280px] md:min-w-[290px] max-w-[290px] bg-slate-800/80 rounded-xl border border-slate-700 flex flex-col h-full">
+                <div class="p-3 bg-slate-800 border-b border-green-600 rounded-t-xl">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-green-500 text-sm uppercase">Pedido Criado</span>
+                        <span id="badgeQtdPedidoCriado" class="bg-green-500/20 text-green-300 font-bold px-2 py-0.5 rounded text-xs">0</span>
+                    </div>
+                    <p id="valorColPedidoCriado" class="text-xs text-slate-400 font-mono mt-1">R$ 0,00</p>
+                </div>
+                <div id="colPedidoCriado" class="p-2 flex-grow overflow-y-auto flex flex-col gap-2"></div>
+            </div>
+
+            <!-- Coluna 5: Autorizado Faturamento -->
+            <div class="min-w-[280px] md:min-w-[290px] max-w-[290px] bg-slate-800/80 rounded-xl border border-slate-700 flex flex-col h-full">
+                <div class="p-3 bg-slate-800 border-b border-purple-500/50 rounded-t-xl">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-purple-400 text-sm uppercase">Autorizado Faturamento</span>
+                        <span id="badgeQtdAutorizadoFaturamento" class="bg-purple-500/20 text-purple-300 font-bold px-2 py-0.5 rounded text-xs">0</span>
+                    </div>
+                    <p id="valorColAutorizadoFaturamento" class="text-xs text-slate-400 font-mono mt-1">R$ 0,00</p>
+                </div>
+                <div id="colAutorizadoFaturamento" class="p-2 flex-grow overflow-y-auto flex flex-col gap-2"></div>
+            </div>
+
+        </div>
+
+        <!-- SUB-ESTEIRA D5 -->
+        <div class="bg-red-950/20 border-2 border-red-500/50 rounded-xl p-3 shrink-0 flex flex-col gap-2 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
+            
+            <div class="flex justify-between items-center border-b border-red-500/30 pb-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">⚠️</span>
+                    <span class="font-extrabold text-red-400 text-sm uppercase tracking-wider">SUB-ESTEIRA D5 (PENDÊNCIAS EM ABERTO)</span>
+                </div>
+                <div class="flex gap-4 items-center">
+                    <span id="valorColD5" class="text-xs text-red-300/90 font-mono">R$ 0,00</span>
+                    <span id="badgeQtdD5" class="bg-red-600 text-white font-black px-2.5 py-0.5 rounded text-xs">0 obras</span>
+                </div>
+            </div>
+
+            <!-- Sub-Colunas Ativas da Esteira D5 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto d5-scroll">
+                <div class="bg-slate-900/80 rounded-lg p-2 border border-red-500/30">
+                    <div class="flex justify-between items-center mb-1 text-xs border-b border-slate-800 pb-1">
+                        <span class="font-bold text-orange-400">EM PROGRAMAÇÃO</span>
+                        <span id="qtdD5Prog" class="text-[10px] text-slate-400">0</span>
+                    </div>
+                    <div id="colD5Prog" class="flex flex-col gap-1 mt-1"></div>
+                </div>
+
+                <div class="bg-slate-900/80 rounded-lg p-2 border border-red-500/30">
+                    <div class="flex justify-between items-center mb-1 text-xs border-b border-slate-800 pb-1">
+                        <span class="font-bold text-slate-400">PENDENTE / EM ANÁLISE</span>
+                        <span id="qtdD5Outros" class="text-[10px] text-slate-400">0</span>
+                    </div>
+                    <div id="colD5Outros" class="flex flex-col gap-1 mt-1"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL DE DETALHAMENTO -->
+    <div id="modalTabela" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-50 hidden flex-col items-center justify-center p-2 md:p-8 fade-in">
+        <div class="bg-slate-800 w-full h-full md:h-auto md:max-h-full md:max-w-6xl md:rounded-2xl shadow-2xl border border-slate-600 flex flex-col overflow-hidden">
+            <div class="p-4 md:p-8 bg-slate-900 flex justify-between items-center border-b border-slate-700">
+                <div>
+                    <h2 id="tituloModal" class="text-2xl md:text-4xl font-extrabold text-white">Obras</h2>
+                    <p id="subtituloModal" class="text-lg md:text-2xl text-blue-400 mt-1 font-mono">R$ 0,00</p>
+                </div>
+                <button onclick="fecharTabelaModal()" class="px-4 py-2 md:px-8 md:py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm md:text-2xl font-black tracking-widest transition">FECHAR (X)</button>
+            </div>
+            <div class="p-0 overflow-y-auto flex-grow bg-slate-800">
+                <table class="w-full text-left text-sm md:text-2xl">
+                    <thead class="bg-slate-700 text-slate-300 sticky top-0 uppercase tracking-wider shadow-md">
+                        <tr>
+                            <th class="px-4 py-3 md:px-8 md:py-6 font-bold">Nota / Projeto</th>
+                            <th class="px-4 py-3 md:px-8 md:py-6 font-bold text-center">Dias Concluído</th>
+                            <th class="px-4 py-3 md:px-8 md:py-6 font-bold text-right">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody id="corpoTabela" class="divide-y divide-slate-700 text-slate-200"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function mudarAba(aba) {
+            const btn1 = document.getElementById('aba1');
+            const btn2 = document.getElementById('aba2');
+            const graf = document.getElementById('conteudoGrafico');
+            const kanb = document.getElementById('conteudoKanban');
+
+            if (aba === 'grafico') {
+                graf.classList.remove('hidden');
+                kanb.classList.add('hidden');
+                kanb.classList.remove('flex');
+                
+                btn1.className = "px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow transition";
+                btn2.className = "px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm transition";
+                if(meuGrafico) setTimeout(() => meuGrafico.resize(), 50);
+            } else {
+                graf.classList.add('hidden');
+                kanb.classList.remove('hidden');
+                kanb.classList.add('flex');
+                
+                btn2.className = "px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow transition";
+                btn1.className = "px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm transition";
+            }
+        }
+
+        function alternarModoTela() {
+            document.body.classList.toggle('modo-celular');
+            if (meuGrafico) setTimeout(() => meuGrafico.resize(), 50);
+        }
+
+        function atualizarRelogio() {
+            document.getElementById('relogio').innerText = new Date().toLocaleTimeString('pt-BR');
+        }
+        setInterval(atualizarRelogio, 1000);
+        atualizarRelogio();
+
+        let dadosAgrupados = {
+            pendente: { nome: 'Pendente de Inventário', obras: [], valorTotal: 0 },
+            analise: { nome: 'Análise Cliente', obras: [], valorTotal: 0 },
+            aguardandoPedido: { nome: 'Aguardando Pedido', obras: [], valorTotal: 0 },
+            pedidoCriado: { nome: 'Pedido Criado', obras: [], valorTotal: 0 },
+            autorizadoFaturamento: { nome: 'Autorizado Faturamento', obras: [], valorTotal: 0 },
+            d5: { nome: 'Aguardando D5', obras: [], valorTotal: 0 }
+        };
+
+        // Guarda histórico exclusivo de obras no status PEDIDO CRIADO para o cálculo (Col Q - Col C)
+        let listaCicloPedidoCriado = [];
+
+        let meuGrafico = null; 
+        const chavesGrafico = ['pendente', 'analise', 'aguardandoPedido', 'pedidoCriado', 'autorizadoFaturamento'];
+
+        var google = {
+            visualization: {
+                Query: {
+                    setResponse: function(response) {
+                        if (response.status === 'error') return; 
+                        processarDados(response.table);
+                    }
+                }
+            }
+        };
+
+        function formatarMoeda(v) {
+            return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function converterParaNumero(v) {
+            if (v === null || v === undefined) return 0;
+            if (typeof v === 'number') return v; 
+            let t = v.toString().replace(/[R$\s]/g, '');
+            if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+            let n = parseFloat(t);
+            return isNaN(n) ? 0 : n;
+        }
+
+        function parseDataBR(dataTexto) {
+            if (!dataTexto) return null;
+            let p = dataTexto.split('/');
+            if (p.length === 3) {
+                return new Date(p[2], p[1] - 1, p[0]);
+            }
+            return null;
+        }
+
+        function calcularDiasRegra(dataConcTxt, dataEnvioTxt, dataFiscTxt, chaveEtapa) {
+            let dataConc = parseDataBR(dataConcTxt);
+            let dataEnvio = parseDataBR(dataEnvioTxt);
+            let dataFisc = parseDataBR(dataFiscTxt);
+
+            if (chaveEtapa === 'pendente') {
+                if (!dataConc) return { dias: '-', alertaAmarelo: false };
+                if (dataEnvio) {
+                    let diffMs = dataEnvio - dataConc;
+                    return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: false };
+                } else {
+                    let hoje = new Date(); hoje.setHours(0,0,0,0);
+                    let diffMs = hoje - dataConc;
+                    return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: true };
+                }
+            } 
+            else if (chaveEtapa === 'analise') {
+                if (!dataEnvio) return { dias: '-', alertaAmarelo: false };
+                if (dataFisc) {
+                    let diffMs = dataFisc - dataEnvio;
+                    return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: false };
+                } else {
+                    let hoje = new Date(); hoje.setHours(0,0,0,0);
+                    let diffMs = hoje - dataEnvio;
+                    return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: true };
+                }
+            } 
+            else if (chaveEtapa === 'aguardandoPedido') {
+                if (dataFisc) {
+                    let hoje = new Date(); hoje.setHours(0,0,0,0);
+                    let diffMs = hoje - dataFisc;
+                    return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: false };
+                } else {
+                    if (!dataConc) return { dias: '-', alertaAmarelo: false };
+                    let hoje = new Date(); hoje.setHours(0,0,0,0);
+                    let diffMs = hoje - dataConc;
+                    return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: false };
+                }
+            }
+            else {
+                if (!dataConc) return { dias: '-', alertaAmarelo: false };
+                let hoje = new Date(); hoje.setHours(0,0,0,0);
+                let diffMs = hoje - dataConc;
+                return { dias: Math.floor(diffMs / (1000 * 60 * 60 * 24)), alertaAmarelo: false };
+            }
+        }
+
+        function processarDados(table) {
+            for (let key in dadosAgrupados) {
+                dadosAgrupados[key].obras = [];
+                dadosAgrupados[key].valorTotal = 0;
+            }
+            listaCicloPedidoCriado = [];
+
+            // Mapeamento dos índices
+            const colNome = 0;               // Coluna A (NOTA/PROJETO)
+            const colDataConc = 2;           // Coluna C (DATA CONCLUSÃO)
+            const colValor = 3;              // Coluna D (VALOR PROJETO)
+            const colDataEnvioInv = 4;       // Coluna E (DATA ENVIO INVENTÁRIO)
+            const colStatus = 6;             // Coluna G (STATUS)
+            const colDataFisc = 8;           // Coluna I (DATA FISCALIZAÇÃO)
+            const colStatusD5 = 9;           // Coluna J (STATUS D5)
+            const colSitD5 = 12;             // Coluna M (SITUAÇÃO D5)
+            const colDataCriacaoPedido = 16; // Coluna Q (DATA CRIAÇÃO PEDIDO)
+
+            const rows = table.rows;
+            
+            rows.forEach(row => {
+                let celulaStatus = row.c[colStatus];
+                if (celulaStatus && celulaStatus.v) {
+                    let statusTxt = celulaStatus.v.toString().toUpperCase().trim();
+                    let nomeObra = (row.c[colNome] && row.c[colNome].v) ? row.c[colNome].v : "Obra s/ ID";
+                    let valorBruto = (row.c[colValor] && row.c[colValor].v) ? row.c[colValor].v : 0;
+                    
+                    let dataConcTxt = (row.c[colDataConc] && (row.c[colDataConc].f || row.c[colDataConc].v)) ? (row.c[colDataConc].f || row.c[colDataConc].v).toString() : "";
+                    let dataEnvioTxt = (row.c[colDataEnvioInv] && (row.c[colDataEnvioInv].f || row.c[colDataEnvioInv].v)) ? (row.c[colDataEnvioInv].f || row.c[colDataEnvioInv].v).toString() : "";
+                    let dataFiscTxt = (row.c[colDataFisc] && (row.c[colDataFisc].f || row.c[colDataFisc].v)) ? (row.c[colDataFisc].f || row.c[colDataFisc].v).toString() : "";
+                    let dataCriacaoPedidoTxt = (row.c[colDataCriacaoPedido] && (row.c[colDataCriacaoPedido].f || row.c[colDataCriacaoPedido].v)) ? (row.c[colDataCriacaoPedido].f || row.c[colDataCriacaoPedido].v).toString() : "";
+
+                    let statusD5Txt = (row.c[colStatusD5] && row.c[colStatusD5].v) ? row.c[colStatusD5].v.toString().toUpperCase().trim() : "";
+                    let sitD5Txt = (row.c[colSitD5] && row.c[colSitD5].v) ? row.c[colSitD5].v.toString().toUpperCase().trim() : "";
+                    
+                    let valorNum = converterParaNumero(valorBruto);
+                    let chaveDestino = '';
+
+                    if (statusTxt.includes('PENDENTE') && statusTxt.includes('INVENT')) chaveDestino = 'pendente';
+                    else if (statusTxt.includes('ANÁLISE CLIENTE') || statusTxt.includes('ANALISE CLIENTE')) chaveDestino = 'analise';
+                    else if (statusTxt.includes('AGUARDANDO PEDIDO')) chaveDestino = 'aguardandoPedido';
+                    else if (statusTxt.includes('PEDIDO CRIADO')) chaveDestino = 'pedidoCriado';
+                    else if (statusTxt.includes('AUTORIZADO') && statusTxt.includes('FATURAMENTO')) chaveDestino = 'autorizadoFaturamento';
+                    else if (statusTxt.includes('D5') || statusTxt.includes('REGULARIZAÇÃO') || statusTxt.includes('REGULARIZACAO')) {
+                        if (!sitD5Txt.includes('REGULARIZADO') && !sitD5Txt.includes('CONCLU')) {
+                            chaveDestino = 'd5';
+                        }
+                    }
+
+                    if (chaveDestino) {
+                        let resultadoDias = calcularDiasRegra(dataConcTxt, dataEnvioTxt, dataFiscTxt, chaveDestino);
+
+                        dadosAgrupados[chaveDestino].obras.push({ 
+                            nome: nomeObra, 
+                            valor: valorNum, 
+                            dias: resultadoDias.dias,
+                            alertaAmarelo: resultadoDias.alertaAmarelo,
+                            situacaoD5: statusD5Txt || sitD5Txt
+                        });
+                        dadosAgrupados[chaveDestino].valorTotal += valorNum;
+                    }
+
+                    // REGRA ESPECÍFICA: CÁLCULO EXCLUSIVO PARA OBRAS NO STATUS "PEDIDO CRIADO" (COLUNA Q - COLUNA C)
+                    if (statusTxt.includes('PEDIDO CRIADO')) {
+                        let dataConc = parseDataBR(dataConcTxt);
+                        let dataPed = parseDataBR(dataCriacaoPedidoTxt);
+                        
+                        if (dataConc && dataPed) {
+                            let diffMs = dataPed - dataConc;
+                            let diasCiclo = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                            if (diasCiclo >= 0) listaCicloPedidoCriado.push(diasCiclo);
+                        }
+                    }
+                }
+            });
+
+            atualizarDashboard();
+            renderizarKanban();
+        }
+
+        function calcularMediaDias(listaObras) {
+            let soma = 0, qtd = 0;
+            listaObras.forEach(o => {
+                if (o.dias !== '-' && !isNaN(o.dias) && o.dias >= 0) {
+                    soma += o.dias;
+                    qtd++;
+                }
+            });
+            return qtd > 0 ? Math.round(soma / qtd) : 0;
+        }
+
+        function atualizarDashboard() {
+            let totalObrasEsteira = 0, valorFinanceiroEsteira = 0;
+
+            chavesGrafico.forEach(chave => {
+                totalObrasEsteira += dadosAgrupados[chave].obras.length;
+                valorFinanceiroEsteira += dadosAgrupados[chave].valorTotal;
+            });
+
+            document.getElementById('totalEsteira').innerText = `${totalObrasEsteira} obras`;
+            document.getElementById('valorTotalEsteira').innerText = formatarMoeda(valorFinanceiroEsteira);
+            document.getElementById('totalD5').innerText = `${dadosAgrupados['d5'].obras.length} obras`;
+            document.getElementById('valorTotalD5').innerText = formatarMoeda(dadosAgrupados['d5'].valorTotal);
+
+            // CALCULA E EXIBE TEMPOS MÉDIOS
+            document.getElementById('mediaPendente').innerText = `${calcularMediaDias(dadosAgrupados.pendente.obras)} dias`;
+            document.getElementById('mediaAnalise').innerText = `${calcularMediaDias(dadosAgrupados.analise.obras)} dias`;
+            document.getElementById('mediaAguardandoPedido').innerText = `${calcularMediaDias(dadosAgrupados.aguardandoPedido.obras)} dias`;
+
+            // MÉDIA DO CICLO COMPLETO (SÓ PARA OBRAS EM "PEDIDO CRIADO": COL Q - COL C)
+            let mediaCicloTotal = 0;
+            if (listaCicloPedidoCriado.length > 0) {
+                let somaCiclo = listaCicloPedidoCriado.reduce((a, b) => a + b, 0);
+                mediaCicloTotal = Math.round(somaCiclo / listaCicloPedidoCriado.length);
+            }
+            document.getElementById('mediaCicloPedido').innerText = `${mediaCicloTotal} dias`;
+
+            const ctx = document.getElementById('esteiraChart').getContext('2d');
+            if (meuGrafico) meuGrafico.destroy();
+
+            meuGrafico = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [
+                        dadosAgrupados.pendente.nome, 
+                        dadosAgrupados.analise.nome, 
+                        dadosAgrupados.aguardandoPedido.nome, 
+                        dadosAgrupados.pedidoCriado.nome,
+                        dadosAgrupados.autorizadoFaturamento.nome
+                    ],
+                    datasets: [{
+                        data: [
+                            dadosAgrupados.pendente.obras.length, 
+                            dadosAgrupados.analise.obras.length, 
+                            dadosAgrupados.aguardandoPedido.obras.length, 
+                            dadosAgrupados.pedidoCriado.obras.length,
+                            dadosAgrupados.autorizadoFaturamento.obras.length
+                        ],
+                        backgroundColor: [
+                            'rgba(234, 179, 8, 0.9)', 
+                            'rgba(59, 130, 246, 0.9)', 
+                            'rgba(74, 222, 128, 0.9)', 
+                            'rgba(22, 163, 74, 0.9)',
+                            'rgba(168, 85, 247, 0.9)'
+                        ],
+                        borderColor: [
+                            'rgb(234, 179, 8)', 
+                            'rgb(59, 130, 246)', 
+                            'rgb(74, 222, 128)', 
+                            'rgb(22, 163, 74)',
+                            'rgb(168, 85, 247)'
+                        ],
+                        borderWidth: 2, borderRadius: 8, barPercentage: 0.5
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    onClick: (e, el) => { if (el.length > 0) mostrarTabelaModal(chavesGrafico[el[0].index]); },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 16 }, color: '#cbd5e1' } },
+                        x: { grid: { display: false }, ticks: { font: { size: 16, weight: 'bold' }, color: '#f8fafc' } }
+                    }
+                }
+            });
+        }
+
+        function renderizarKanban() {
+            const mapaCols = {
+                pendente: { container: 'colPendente', badge: 'badgeQtdPendente', valor: 'valorColPendente' },
+                analise: { container: 'colAnalise', badge: 'badgeQtdAnalise', valor: 'valorColAnalise' },
+                aguardandoPedido: { container: 'colAguardandoPedido', badge: 'badgeQtdAguardandoPedido', valor: 'valorColAguardandoPedido' },
+                pedidoCriado: { container: 'colPedidoCriado', badge: 'badgeQtdPedidoCriado', valor: 'valorColPedidoCriado' },
+                autorizadoFaturamento: { container: 'colAutorizadoFaturamento', badge: 'badgeQtdAutorizadoFaturamento', valor: 'valorColAutorizadoFaturamento' }
+            };
+
+            for (let chave in mapaCols) {
+                let conf = mapaCols[chave];
+                let dados = dadosAgrupados[chave];
+                
+                document.getElementById(conf.badge).innerText = dados.obras.length;
+                document.getElementById(conf.valor).innerText = formatarMoeda(dados.valorTotal);
+
+                let box = document.getElementById(conf.container);
+                box.innerHTML = '';
+
+                if (dados.obras.length === 0) {
+                    box.innerHTML = `<p class="text-xs text-slate-500 text-center py-4 italic">Nenhuma obra</p>`;
+                } else {
+                    dados.obras.forEach(obra => {
+                        let badgeDiasClass = "bg-slate-700 text-slate-300 border border-slate-600";
+                        let textoDias = obra.dias !== '-' ? `${obra.dias} dias` : '-';
+                        
+                        if (chave === 'pendente') {
+                            if (obra.dias > 3) {
+                                badgeDiasClass = "bg-red-900/80 text-red-200 border-2 border-red-500 font-bold";
+                            } else if (obra.alertaAmarelo) {
+                                badgeDiasClass = "bg-amber-900/60 text-amber-200 border-2 border-amber-500 font-bold";
+                            }
+                        } else if (chave === 'analise') {
+                            if (obra.dias > 5) {
+                                badgeDiasClass = "bg-red-900/80 text-red-200 border-2 border-red-500 font-bold";
+                            } else if (obra.alertaAmarelo) {
+                                badgeDiasClass = "bg-amber-900/60 text-amber-200 border-2 border-amber-500 font-bold";
+                            }
+                        } else if (chave === 'aguardandoPedido') {
+                            if (obra.dias > 3) {
+                                badgeDiasClass = "bg-red-900/80 text-red-200 border-2 border-red-500 font-bold";
+                            }
+                        }
+
+                        box.innerHTML += `
+                            <div class="bg-slate-900 p-3 rounded-lg border border-slate-700/60 shadow hover:border-slate-500 transition">
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="font-black text-white text-sm">#${obra.nome}</span>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full ${badgeDiasClass}">${textoDias}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-xs mt-2 pt-2 border-t border-slate-800">
+                                    <span class="text-slate-400">Valor:</span>
+                                    <span class="font-mono text-emerald-400 font-bold">${formatarMoeda(obra.valor)}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+            }
+
+            // RENDERIZA SUB-ESTEIRA D5
+            let dadosD5 = dadosAgrupados['d5'];
+            document.getElementById('badgeQtdD5').innerText = `${dadosD5.obras.length} obra(s)`;
+            document.getElementById('valorColD5').innerText = formatarMoeda(dadosD5.valorTotal);
+
+            let colProg = document.getElementById('colD5Prog');
+            let colOutros = document.getElementById('colD5Outros');
+
+            colProg.innerHTML = '';
+            colOutros.innerHTML = '';
+
+            let countProg = 0, countOutros = 0;
+
+            dadosD5.obras.forEach(obra => {
+                let cardHtml = `
+                    <div class="bg-slate-950 p-2 rounded border border-slate-800 flex justify-between items-center text-xs">
+                        <div>
+                            <span class="font-bold text-white">#${obra.nome}</span>
+                            <span class="block text-[10px] text-emerald-400 font-mono">${formatarMoeda(obra.valor)}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-400">${obra.dias !== '-' ? obra.dias + 'd' : '-'}</span>
+                    </div>
+                `;
+
+                let sit = obra.situacaoD5;
+
+                if (sit.includes('PROGRAMA') || sit.includes('PROGRAMADA')) {
+                    colProg.innerHTML += cardHtml;
+                    countProg++;
+                } else {
+                    colOutros.innerHTML += cardHtml;
+                    countOutros++;
+                }
+            });
+
+            document.getElementById('qtdD5Prog').innerText = countProg;
+            document.getElementById('qtdD5Outros').innerText = countOutros;
+
+            if (countProg === 0) colProg.innerHTML = `<span class="text-[10px] text-slate-600 italic">Nenhuma</span>`;
+            if (countOutros === 0) colOutros.innerHTML = `<span class="text-[10px] text-slate-600 italic">Nenhuma</span>`;
+        }
+
+        function mostrarTabelaModal(chaveStatus) {
+            const dadosCategoria = dadosAgrupados[chaveStatus];
+            const modal = document.getElementById('modalTabela');
+            document.getElementById('tituloModal').innerHTML = `Status: <span class="text-slate-300">${dadosCategoria.nome}</span>`;
+            document.getElementById('subtituloModal').innerText = `Total: ${formatarMoeda(dadosCategoria.valorTotal)}`;
+            
+            const corpo = document.getElementById('corpoTabela');
+            corpo.innerHTML = ''; 
+
+            if (dadosCategoria.obras.length === 0) {
+                corpo.innerHTML = `<tr><td colspan="3" class="p-6 text-center text-slate-500">Nenhuma obra encontrada.</td></tr>`;
+            } else {
+                dadosCategoria.obras.forEach(o => {
+                    let badgeClass = "bg-slate-700 text-slate-200 border border-slate-600";
+                    if (chaveStatus === 'pendente') {
+                        if (o.dias > 3) badgeClass = "bg-red-900 text-red-300 border-2 border-red-500 font-bold";
+                        else if (o.alertaAmarelo) badgeClass = "bg-amber-900/60 text-amber-200 border-2 border-amber-500 font-bold";
+                    } else if (chaveStatus === 'analise') {
+                        if (o.dias > 5) badgeClass = "bg-red-900 text-red-300 border-2 border-red-500 font-bold";
+                        else if (o.alertaAmarelo) badgeClass = "bg-amber-900/60 text-amber-200 border-2 border-amber-500 font-bold";
+                    } else if (chaveStatus === 'aguardandoPedido') {
+                        if (o.dias > 3) badgeClass = "bg-red-900 text-red-300 border-2 border-red-500 font-bold";
+                    }
+                    
+                    corpo.innerHTML += `
+                        <tr class="hover:bg-slate-700">
+                            <td class="px-4 py-3 md:px-8 md:py-5 font-bold">${o.nome}</td>
+                            <td class="px-4 py-3 md:px-8 md:py-5 text-center"><span class="px-3 py-1 rounded-full text-xs md:text-lg ${badgeClass}">${o.dias} dias</span></td>
+                            <td class="px-4 py-3 md:px-8 md:py-5 text-right font-mono text-emerald-400 font-bold">${formatarMoeda(o.valor)}</td>
+                        </tr>
+                    `;
+                });
+            }
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function fecharTabelaModal() {
+            document.getElementById('modalTabela').classList.add('hidden');
+            document.getElementById('modalTabela').classList.remove('flex');
+        }
+
+        function carregarDados() {
+            const sheetId = '1s04UUuAHjdgj5rvScXKjV13jcdzSLTYak6omBLR206o';
+            const oldScript = document.getElementById('google-jsonp-script');
+            if (oldScript) oldScript.remove();
+
+            const script = document.createElement('script');
+            script.id = 'google-jsonp-script';
+            script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&_=${new Date().getTime()}`;
+            document.body.appendChild(script);
+        }
+
+        carregarDados();
+        setInterval(carregarDados, 30000); 
+    </script>
+</body>
+</html>
